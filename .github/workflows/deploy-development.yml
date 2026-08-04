@@ -1,0 +1,21 @@
+name: Deploy to development
+
+on:
+  push:
+    branches: [feat/entra-oauth-support]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ibmi-mcp-server-development
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
