@@ -3,10 +3,6 @@ name: Promote to production
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
-
 concurrency:
   group: ibmi-mcp-server-production
   cancel-in-progress: false
@@ -14,6 +10,10 @@ concurrency:
 jobs:
   deploy:
     name: Deploy
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
     uses: ./.github/workflows/deploy.yml
     with:
       environment: prod

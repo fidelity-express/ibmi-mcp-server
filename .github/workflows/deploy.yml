@@ -16,8 +16,10 @@
 #
 # The IAM role comes from the AWS_DEPLOY_ROLE secret on the dev and prod
 # GitHub environments rather than from an input. Setting `environment` on
-# the job below resolves that environment's secrets here, and environment
-# secrets cannot be passed in from a caller anyway.
+# the job below is what selects which of the two applies.
+#
+# The callers must grant `id-token: write` and pass `secrets: inherit` on the
+# job that calls this workflow.
 #
 # ===============================================================
 

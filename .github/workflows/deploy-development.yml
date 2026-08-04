@@ -5,10 +5,6 @@ on:
     branches: [feat/entra-oauth-support]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
-
 concurrency:
   group: ibmi-mcp-server-development
   cancel-in-progress: false
@@ -16,6 +12,10 @@ concurrency:
 jobs:
   deploy:
     name: Deploy
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
     uses: ./.github/workflows/deploy.yml
     with:
       environment: dev
