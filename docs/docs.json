@@ -16,24 +16,18 @@
         "groups": [
           {
             "group": "Getting Started",
-            "pages": [
-              "index",
-              "quickstart",
-              "setup-mapepire"
-            ]
+            "pages": ["index", "quickstart", "setup-mapepire"]
           },
-                    {
+          {
             "group": "Core Concepts",
-            "pages": [
-              "concepts/architecture",
-              "concepts/mcp-overview"
-            ]
+            "pages": ["concepts/architecture", "concepts/mcp-overview"]
           },
           {
             "group": "Server Configuration",
             "pages": [
               "configuration",
-              "server-config/ibmi-auth"
+              "server-config/ibmi-auth",
+              "server-config/entra-oauth"
             ]
           },
           {
@@ -63,10 +57,7 @@
         "groups": [
           {
             "group": "Getting Started",
-            "pages": [
-              "cli/overview",
-              "cli/getting-started"
-            ]
+            "pages": ["cli/overview", "cli/getting-started"]
           },
           {
             "group": "Usage Guide",
@@ -79,9 +70,7 @@
           },
           {
             "group": "Advanced",
-            "pages": [
-              "cli/agent-integration"
-            ]
+            "pages": ["cli/agent-integration"]
           }
         ]
       },
@@ -90,9 +79,7 @@
         "groups": [
           {
             "group": "Getting Started",
-            "pages": [
-              "agents/overview"
-            ]
+            "pages": ["agents/overview"]
           }
         ]
       },
@@ -163,15 +150,15 @@
   },
   "contextual": {
     "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
   },
   "footer": {
     "socials": {

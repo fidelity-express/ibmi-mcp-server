@@ -91,7 +91,6 @@ export function createAuthMiddleware(strategy: AuthStrategy) {
         operation: "authMiddlewareVerification",
         context,
         rethrow: true, // Rethrow to be caught by Hono's global error handler
-        errorCode: JsonRpcErrorCode.Unauthorized, // Default to unauthorized if not more specific
       });
     }
   };

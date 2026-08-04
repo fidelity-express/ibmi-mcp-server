@@ -14,6 +14,7 @@ import path, { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 import type { JDBCOptions } from "@ibm/mapepire-js";
+import { parseOAuthScopes, validateOAuthEnvironment } from "./oauthConfig.js";
 
 // Load .env from multiple possible locations for monorepo flexibility
 // Priority order:
@@ -180,6 +181,9 @@ const EnvSchema = z.object({
   OAUTH_ISSUER_URL: z.string().url().optional(),
   OAUTH_JWKS_URI: z.string().url().optional(),
   OAUTH_AUDIENCE: z.string().optional(),
+  OAUTH_RESOURCE_URL: z.string().url().optional(),
+  OAUTH_SCOPES_SUPPORTED: z.string().optional(),
+  OAUTH_REQUIRED_SCOPES: z.string().optional(),
   DEV_MCP_CLIENT_ID: z.string().optional(),
   DEV_MCP_SCOPES: z.string().optional(),
   OPENROUTER_APP_URL: z
@@ -425,9 +429,22 @@ if (!parsedEnv.success) {
       parsedEnv.error.flatten().fieldErrors,
     );
   }
+
+  // Never let an invalid OAuth configuration silently fall back to auth mode
+  // "none". The broader fallback supports legacy optional configuration, but
+  // disabling authentication after an OAuth validation error is unsafe.
+  if (process.env.MCP_AUTH_MODE === "oauth") {
+    throw new Error(
+      `Invalid OAuth environment variables: ${parsedEnv.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
 }
 
 const env = parsedEnv.success ? parsedEnv.data : EnvSchema.parse({});
+
+validateOAuthEnvironment(env);
 
 /**
  * Expands tilde (~) to user's home directory
@@ -555,9 +572,7 @@ function parseJdbcOptionsString(raw: string): JDBCOptions | undefined {
     const key = pair.slice(0, eqIdx).trim();
     const value = pair.slice(eqIdx + 1).trim();
     if (!key) {
-      throw new Error(
-        `Invalid DB2i_JDBC_OPTIONS: empty key in pair "${pair}"`,
-      );
+      throw new Error(`Invalid DB2i_JDBC_OPTIONS: empty key in pair "${pair}"`);
     }
     if (key === "libraries") {
       result[key] = value
@@ -568,9 +583,7 @@ function parseJdbcOptionsString(raw: string): JDBCOptions | undefined {
       result[key] = value;
     }
   }
-  return Object.keys(result).length > 0
-    ? (result as JDBCOptions)
-    : undefined;
+  return Object.keys(result).length > 0 ? (result as JDBCOptions) : undefined;
 }
 
 export const config = {
@@ -596,6 +609,16 @@ export const config = {
   oauthIssuerUrl: env.OAUTH_ISSUER_URL,
   oauthJwksUri: env.OAUTH_JWKS_URI,
   oauthAudience: env.OAUTH_AUDIENCE,
+  /**
+   * Canonical public URL of this MCP server, used as the OAuth protected
+   * resource identifier (RFC 9728). Must match the URL users enter in their MCP
+   * client exactly, including any path component. From `OAUTH_RESOURCE_URL`.
+   */
+  oauthResourceUrl: env.OAUTH_RESOURCE_URL,
+  /** Scopes advertised in protected resource metadata. From `OAUTH_SCOPES_SUPPORTED`. */
+  oauthScopesSupported: parseOAuthScopes(env.OAUTH_SCOPES_SUPPORTED),
+  /** Token scopes required on every OAuth-authenticated MCP request. */
+  oauthRequiredScopes: parseOAuthScopes(env.OAUTH_REQUIRED_SCOPES) ?? [],
   devMcpClientId: env.DEV_MCP_CLIENT_ID,
   devMcpScopes: env.DEV_MCP_SCOPES?.split(",").map((s) => s.trim()),
   openrouterAppUrl: env.OPENROUTER_APP_URL || "http://localhost:3000",

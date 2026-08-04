@@ -11,6 +11,7 @@ import { StatusCode } from "hono/utils/http-status";
 import { JsonRpcErrorCode, McpError } from "../../../types-global/errors.js";
 import { ErrorHandler, requestContextService } from "../../../utils/index.js";
 import { logOperationStart } from "../../../utils/internal/logging-helpers.js";
+import { buildBearerChallenge } from "../auth/lib/protectedResourceMetadata.js";
 import { HonoNodeBindings } from "./httpTypes.js";
 
 function toHttpCode(errorCode: JsonRpcErrorCode): StatusCode {
@@ -90,6 +91,22 @@ export const httpErrorHandler = async (
       context,
       "Could not retrieve requestId from Hono context in error handler.",
     );
+  }
+
+  // RFC 9728: point unauthenticated clients at the protected resource metadata
+  // so they can discover the authorization server and start the OAuth flow.
+  // RFC 6750 also requires a challenge for insufficient-scope responses.
+  const isScopeError =
+    status === 403 &&
+    handledError instanceof McpError &&
+    Array.isArray(handledError.details?.requiredScopes);
+  if (status === 401 || isScopeError) {
+    const challenge = buildBearerChallenge(
+      isScopeError ? { error: "insufficient_scope" } : undefined,
+    );
+    if (challenge) {
+      c.header("WWW-Authenticate", challenge);
+    }
   }
 
   c.status(status);
