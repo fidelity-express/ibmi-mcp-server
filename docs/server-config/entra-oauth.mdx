@@ -54,7 +54,11 @@ Steps 1 and 2 are what this server provides. If either is missing, clients canno
 
 ## Step 1: Register the resource API in Entra ID
 
-Use one app registration for the IBM i MCP resource API and a separate app registration for the Claude OAuth client. This keeps the API's audience and permissions distinct from the credentials Claude uses during authorization.
+Entra models the API being called and the application calling it as separate registrations, so this takes two: a **resource API** registration that is the token's audience, and a **client** registration that Claude uses to request tokens. A single registration can technically play both parts — don't:
+
+- The client registration holds a secret you hand to a third party, alongside a redirect URI on a domain you do not control. The resource API needs neither; it only validates signatures against Entra's public JWKS.
+- Each client gets its own identity in the token's `azp` claim, so you can add, audit, or revoke a second client later without reissuing the API's identity.
+- The two enterprise applications gate different questions: assignment on the resource API controls who may query IBM i, assignment on the client controls who may use that client to do it.
 
 <Steps>
   <Step title="Create the resource API registration">
@@ -62,16 +66,34 @@ Use one app registration for the IBM i MCP resource API and a separate app regis
   </Step>
 
 <Step title="Issue v2 access tokens">
-  Open the app registration's **Manifest** and set
-  `api.requestedAccessTokenVersion` to `2`. The server uses Entra's `/v2.0`
-  issuer and expects a v2 access token.
+  Open the app registration's **Manifest** and set the requested access token
+  version to `2`. The property is `api.requestedAccessTokenVersion` in the
+  Microsoft Graph manifest format and top-level `requestedAccessTokenVersion` in
+  the Azure AD Graph format; the portal offers both. It defaults to `null`,
+  meaning v1, and the editor may omit the key entirely — adding it is expected,
+  not a workaround.
+
+The server uses Entra's `/v2.0` issuer and expects a v2 access token. A v1 token
+fails validation twice over: it carries a different issuer
+(`https://sts.windows.net/<tenant-id>/`) and puts the Application ID URI in
+`aud` instead of the client ID.
+
 </Step>
 
 <Step title="Expose the delegated scope">
-  Under **Expose an API**, set the Application ID URI to the canonical MCP
-  resource URL, such as `https://mcp.example.com/mcp`. Add a delegated scope
-  named `ibmi.read` that administrators and users can consent to as appropriate
-  for your tenant.
+  Under **Expose an API**, accept the default Application ID URI of
+  `api://<application-client-id>`, then add a delegated scope named `ibmi.read`
+  that administrators and users can consent to as appropriate for your tenant.
+
+  <Warning>
+  The Application ID URI is **not** the MCP server's URL and need not resemble
+  it. Entra accepts only [a fixed set of
+  formats](https://learn.microsoft.com/entra/identity-platform/security-best-practices-for-app-registration#application-id-uri-also-known-as-identifier-uri):
+  an `https://` URI must use a domain verified in your tenant and cannot carry a
+  port, so a value like `https://mcp.example.com:8080/mcp` is rejected outright.
+  `api://<application-client-id>` always works. `OAUTH_RESOURCE_URL` is a
+  separate setting — see Step 3.
+  </Warning>
 </Step>
 
   <Step title="Require assignment">
@@ -121,9 +143,11 @@ OAUTH_ISSUER_URL=https://login.microsoftonline.com/<tenant-id>/v2.0
 OAUTH_JWKS_URI=https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys
 OAUTH_AUDIENCE=<resource-api-application-client-id-guid>
 
-# Must match the URL users enter in their MCP client exactly, path included
+# Must match the URL users enter in their MCP client exactly, path and port included
 OAUTH_RESOURCE_URL=https://mcp.example.com/mcp
-OAUTH_SCOPES_SUPPORTED=https://mcp.example.com/mcp/ibmi.read
+
+# Qualified by the resource API's Application ID URI, not by OAUTH_RESOURCE_URL
+OAUTH_SCOPES_SUPPORTED=api://<resource-api-application-client-id-guid>/ibmi.read
 
 # Short scope names required in the access token's scp claim
 OAUTH_REQUIRED_SCOPES=ibmi.read
@@ -135,11 +159,23 @@ OAUTH_REQUIRED_SCOPES=ibmi.read
 | `OAUTH_JWKS_URI`         | Signing key set. Optional — defaults to `<issuer>/.well-known/jwks.json`, which is **not** Entra's layout, so set it explicitly.                          |
 | `OAUTH_AUDIENCE`         | Validated against the token's `aud` claim. For an Entra v2 access token, use the resource API's Application (client) ID GUID, not its Application ID URI. |
 | `OAUTH_RESOURCE_URL`     | The protected resource identifier ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)). Required for discovery.                                           |
-| `OAUTH_SCOPES_SUPPORTED` | Comma-separated, fully-qualified scopes advertised to clients and included in bearer challenges.                                                          |
+| `OAUTH_SCOPES_SUPPORTED` | Comma-separated, fully-qualified scopes advertised to clients and included in bearer challenges. Qualified by the resource API's Application ID URI.      |
 | `OAUTH_REQUIRED_SCOPES`  | Comma-separated scope names required in every accepted token. Missing scopes return `403 insufficient_scope`.                                             |
 
 <Warning>
-Entra requires the **fully-qualified** scope URI in the authorization request, so `OAUTH_SCOPES_SUPPORTED` uses `<application-id-uri>/<scope>`. The issued token's own `scp` claim contains only the short name (`ibmi.read`), which is why `OAUTH_REQUIRED_SCOPES` uses the short value.
+  `OAUTH_ISSUER_URL` is the issuer, not an endpoint prefix: it ends in `/v2.0`,
+  **not** `/oauth2/v2.0`. The latter is the prefix for Entra's `authorize` and
+  `token` endpoints and has no discovery document behind it. Because the server
+  both matches this value against the token's `iss` claim and publishes it as
+  the authorization server clients discover, the wrong form breaks token
+  validation and interactive sign-in at once.
+</Warning>
+
+<Warning>
+Entra requires the **fully-qualified** scope URI in the authorization request, so `OAUTH_SCOPES_SUPPORTED` uses `<application-id-uri>/<scope>` — for the registration in Step 1, `api://<resource-api-client-id>/ibmi.read`. The issued token's own `scp` claim contains only the short name (`ibmi.read`), which is why `OAUTH_REQUIRED_SCOPES` uses the short value.
+
+`OAUTH_RESOURCE_URL` is a third, unrelated value: this server's public URL exactly as MCP clients address it, port and path included. It never has to match the Application ID URI.
+
 </Warning>
 
 OAuth mode now fails at startup if issuer, audience, protected resource, advertised scopes, or required scopes are missing. Public OAuth URLs must use HTTPS; HTTP is accepted only for loopback development URLs.
@@ -165,7 +201,7 @@ curl -i -X POST https://mcp.example.com/mcp \
 The second command must return `401` with:
 
 ```http
-WWW-Authenticate: Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp", scope="https://mcp.example.com/mcp/ibmi.read"
+WWW-Authenticate: Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp", scope="api://<resource-api-client-id>/ibmi.read"
 ```
 
 Both endpoints are served without authentication by design — clients need them before they hold a token.
@@ -182,14 +218,14 @@ In Claude, add a custom connector pointing at `https://mcp.example.com/mcp`. Und
 
 ## Troubleshooting
 
-| Symptom                                                                  | Cause                                                                                                                                                                         |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Client reports it can't reach the server, and Entra logs show no traffic | Discovery failed. Verify both checks in Step 4 return what's shown.                                                                                                           |
-| `AADSTS9010010` on token request                                         | The MCP server URL does not match the resource API's Application ID URI.                                                                                                      |
-| `403` with `insufficient_scope`                                          | The access token does not contain every `OAUTH_REQUIRED_SCOPES` value. Confirm the Claude client has the delegated API permission and requests the fully-qualified scope URI. |
-| `401` with "Token must contain a client identifier claim"                | Token carries none of `client_id`, `azp`, or `appid` — check you're issuing a v2 access token, not an ID token.                                                               |
-| `401` with "OAuth token verification failed"                             | `OAUTH_AUDIENCE` does not match the token's `aud`, the issuer is wrong, or `OAUTH_JWKS_URI` is wrong. For Entra v2, compare `aud` with the resource API's client ID GUID.     |
-| Assigned group members can connect, but unassigned users can too         | **Assignment required?** is not enabled on the resource API's enterprise application.                                                                                         |
+| Symptom                                                                  | Cause                                                                                                                                                                            |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client reports it can't reach the server, and Entra logs show no traffic | Discovery failed. Verify both checks in Step 4 return what's shown.                                                                                                              |
+| `AADSTS500011` during authorization                                      | The Application ID URI qualifying `OAUTH_SCOPES_SUPPORTED` does not exist in the tenant. Qualify it with the resource API's actual Application ID URI, not `OAUTH_RESOURCE_URL`. |
+| `403` with `insufficient_scope`                                          | The access token does not contain every `OAUTH_REQUIRED_SCOPES` value. Confirm the Claude client has the delegated API permission and requests the fully-qualified scope URI.    |
+| `401` with "Token must contain a client identifier claim"                | Token carries none of `client_id`, `azp`, or `appid` — check you're issuing a v2 access token, not an ID token.                                                                  |
+| `401` with "OAuth token verification failed"                             | `OAUTH_AUDIENCE` does not match the token's `aud`, the issuer is wrong, or `OAUTH_JWKS_URI` is wrong. For Entra v2, compare `aud` with the resource API's client ID GUID.        |
+| Assigned group members can connect, but unassigned users can too         | **Assignment required?** is not enabled on the resource API's enterprise application.                                                                                            |
 
 <Tip>
   Set `MCP_LOG_LEVEL=debug` to log the decoded claims of every verified token —
