@@ -11,10 +11,13 @@
 FROM node:bookworm-slim AS base
 WORKDIR /app
 
-# System updates + recent npm (lockfileVersion 3 needs npm >= 7)
+# System updates + recent npm (lockfileVersion 3 needs npm >= 7).
+# curl is required by the ECS container health check. The official node:*-slim
+# image installs curl only to download Node itself, then purges it with
+# `apt-get purge --auto-remove`, so it has to be added back explicitly.
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && npm install -g npm@latest \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
