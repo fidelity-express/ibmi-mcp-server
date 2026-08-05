@@ -298,6 +298,10 @@ export function createHttpApp(
         "Last-Event-ID",
         "Authorization",
       ],
+      // Browser clients read the bearer challenge to locate the authorization
+      // server, and the session id to resume a stateful session. Neither is
+      // CORS-safelisted, so both are invisible unless exposed explicitly.
+      exposeHeaders: ["WWW-Authenticate", "Mcp-Session-Id"],
       credentials: true,
     }),
   );
