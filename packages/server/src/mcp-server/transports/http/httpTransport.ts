@@ -42,6 +42,7 @@ import { mcpTransportMiddleware } from "./mcpTransportMiddleware.js";
 const HTTP_PORT = config.mcpHttpPort;
 const HTTP_HOST = config.mcpHttpHost;
 const MCP_ENDPOINT_PATH = config.mcpHttpEndpointPath;
+const HEALTH_ENDPOINT_PATH = "/healthz";
 
 /**
  * Extracts the client IP address from the request, prioritizing common proxy headers.
@@ -276,7 +277,10 @@ export function createHttpApp(
   logger.info(transportContext, "Creating Hono HTTP application.");
 
   // 1. HTTP Access Logging
-  app.use(honoLogger());
+  const accessLogger = honoLogger();
+  app.use((c, next) =>
+    c.req.path === HEALTH_ENDPOINT_PATH ? next() : accessLogger(c, next),
+  );
 
   // 2. Security Headers
   app.use(secureHeaders());
@@ -383,7 +387,7 @@ export function createHttpApp(
 
   app.onError(httpErrorHandler);
 
-  app.get("/healthz", (c) => {
+  app.get(HEALTH_ENDPOINT_PATH, (c) => {
     const pools = SourceManager.getInstance().getHealthSummary();
     const hasUnhealthy = Object.values(pools).some(
       (p) => p.healthStatus === "unhealthy",
